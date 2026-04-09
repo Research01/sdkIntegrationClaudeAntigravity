@@ -1,0 +1,42 @@
+{
+  "name": "claude-integration",
+  "version": "1.0.0",
+  "description": "Claude pay-as-you-go integration: CLI + MCP server for Google Antigravity",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "claude-cli": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "ask": "node dist/index.js ask",
+    "chat": "node dist/index.js chat",
+    "health": "node dist/index.js health",
+    "models": "node dist/index.js models",
+    "mcp:dev": "tsc && node dist/mcp/server.js",
+    "mcp:start": "node dist/mcp/server.js"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "keywords": [
+    "claude",
+    "anthropic",
+    "mcp",
+    "antigravity",
+    "cli"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.82.0",
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "commander": "^14.0.3",
+    "dotenv": "^17.4.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.2",
+    "typescript": "^6.0.2"
+  }
+}
