@@ -19,6 +19,12 @@ export interface RequestOptions {
   temperature?: number;
 }
 
+/** Options for streaming requests */
+export interface StreamRequestOptions extends RequestOptions {
+  onChunk: (chunk: string) => void;
+  onComplete?: (response: ClaudeResponse) => void;
+}
+
 /** Standardized response from Claude */
 export interface ClaudeResponse {
   content: string;
@@ -53,6 +59,41 @@ export interface ChatMessage {
   content: string;
 }
 
+// ── v2: Conversation Persistence ─────────────────────────────────
+
+/** A named conversation session that can be persisted to disk */
+export interface ConversationSession {
+  id: string;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+  model?: string;
+  system?: string;
+  messages: ChatMessage[];
+  metadata: {
+    totalInputTokens: number;
+    totalOutputTokens: number;
+    totalCostUsd: number;
+    turnCount: number;
+  };
+}
+
+// ── v2: Token Cost Estimation ─────────────────────────────────────
+
+/** Cost estimation before sending a request */
+export interface TokenCostEstimate {
+  model: string;
+  estimatedInputTokens: number;
+  estimatedOutputTokens: number;
+  inputCostUsd: number;
+  outputCostUsd: number;
+  totalCostUsd: number;
+  pricePerInputMtok: number;
+  pricePerOutputMtok: number;
+}
+
+// ── MCP tool input schemas ────────────────────────────────────────
+
 /** MCP tool input schemas */
 export interface ClaudeAskInput {
   prompt: string;
@@ -66,4 +107,26 @@ export interface ClaudeExplainInput {
   code_or_summary: string;
   language?: string;
   context?: string;
+}
+
+/** Input for cost estimation tool */
+export interface ClaudeEstimateCostInput {
+  prompt: string;
+  system?: string;
+  model?: string;
+  expected_output_tokens?: number;
+}
+
+/** Input for session chat tool */
+export interface ClaudeSessionChatInput {
+  session_id: string;
+  message: string;
+  model?: string;
+  max_tokens?: number;
+  temperature?: number;
+}
+
+/** Input for loading a session */
+export interface ClaudeSessionLoadInput {
+  session_id: string;
 }

@@ -1,21 +1,31 @@
 {
   "name": "claude-integration",
-  "version": "1.0.0",
-  "description": "Claude pay-as-you-go integration: CLI + MCP server for Google Antigravity",
+  "version": "3.0.0",
+  "description": "Claude pay-as-you-go integration + Antigravity subscription switching: CLI + MCP server",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
     "claude-cli": "dist/index.js"
   },
   "scripts": {
-    "build": "tsc",
-    "dev": "tsc --watch",
-    "ask": "node dist/index.js ask",
-    "chat": "node dist/index.js chat",
-    "health": "node dist/index.js health",
-    "models": "node dist/index.js models",
-    "mcp:dev": "tsc && node dist/mcp/server.js",
-    "mcp:start": "node dist/mcp/server.js"
+    "build":              "tsc",
+    "dev":                "tsc --watch",
+    "test":               "node --experimental-vm-modules --test dist/test/integration.test.js",
+    "ask":                "node dist/index.js ask",
+    "chat":               "node dist/index.js chat",
+    "health":             "node dist/index.js health",
+    "models":             "node dist/index.js models",
+    "vision":             "node dist/index.js vision",
+    "chain":              "node dist/index.js chain",
+    "dashboard":          "node dist/index.js dashboard",
+    "backend":            "node dist/index.js backend",
+    "use:claude":         "node dist/index.js use:claude",
+    "use:antigravity":    "node dist/index.js use:antigravity",
+    "cache:stats":        "node dist/index.js cache:stats",
+    "cache:clear":        "node dist/index.js cache:clear",
+    "cache:prune":        "node dist/index.js cache:prune",
+    "mcp:dev":            "tsc && node dist/mcp/server.js",
+    "mcp:start":          "node dist/mcp/server.js"
   },
   "engines": {
     "node": ">=20.0.0"
@@ -25,7 +35,9 @@
     "anthropic",
     "mcp",
     "antigravity",
-    "cli"
+    "cli",
+    "vision",
+    "analytics"
   ],
   "license": "MIT",
   "dependencies": {

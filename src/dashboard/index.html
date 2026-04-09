@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Claude Integration — Analytics Dashboard</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:       #0d0f14;
+    --surface:  #13161e;
+    --border:   #1e2330;
+    --claude:   #a78bfa;
+    --ag:       #34d399;
+    --accent:   #818cf8;
+    --text:     #e2e8f0;
+    --muted:    #64748b;
+    --cost:     #f472b6;
+    --tokens:   #60a5fa;
+    --warning:  #fcd34d;
+    --success:  #34d399;
+    --danger:   #f87171;
+    --r:        12px;
+    --shadow:   0 8px 32px rgba(0,0,0,0.4);
+  }
+
+  html, body { height: 100%; font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); font-size: 14px; line-height: 1.6; }
+
+  /* ── Layout ───────────────────────────────────────────────────── */
+  .app { display: grid; grid-template-rows: 64px 1fr; min-height: 100vh; }
+
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 28px; background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    position: sticky; top: 0; z-index: 100;
+  }
+
+  .logo { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 16px; }
+  .logo-icon { font-size: 22px; }
+
+  .header-right { display: flex; align-items: center; gap: 16px; }
+
+  .backend-badge {
+    display: flex; align-items: center; gap: 6px;
+    padding: 4px 14px; border-radius: 20px;
+    font-size: 12px; font-weight: 600;
+    border: 1px solid transparent; transition: all 0.3s;
+  }
+  .backend-badge.claude   { background: rgba(167,139,250,0.15); color: var(--claude); border-color: rgba(167,139,250,0.3); }
+  .backend-badge.antigravity { background: rgba(52,211,153,0.15); color: var(--ag); border-color: rgba(52,211,153,0.3); }
+  .badge-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity: 0.4; } }
+
+  .refresh-btn {
+    padding: 6px 14px; border-radius: 8px; border: 1px solid var(--border);
+    background: transparent; color: var(--muted); cursor: pointer; font-size: 12px;
+    transition: all 0.2s;
+  }
+  .refresh-btn:hover { background: var(--border); color: var(--text); }
+
+  main { padding: 28px; overflow-y: auto; }
+
+  /* ── Cards ─────────────────────────────────────────────────────── */
+  .card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--r); padding: 20px;
+    box-shadow: var(--shadow); transition: transform 0.2s;
+  }
+  .card:hover { transform: translateY(-2px); }
+
+  .card-title {
+    font-size: 11px; font-weight: 600; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--muted); margin-bottom: 12px;
+  }
+
+  /* ── Stat cards grid ────────────────────────────────────────────── */
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 16px; margin-bottom: 24px;
+  }
+
+  .stat-card { text-align: center; }
+  .stat-value { font-size: 32px; font-weight: 700; line-height: 1.1; }
+  .stat-label { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .stat-sub   { font-size: 11px; color: var(--muted); margin-top: 6px; }
+
+  .color-claude   { color: var(--claude); }
+  .color-tokens   { color: var(--tokens); }
+  .color-cost     { color: var(--cost); }
+  .color-cache    { color: var(--success); }
+  .color-speed    { color: var(--warning); }
+
+  /* ── Two-column layout ──────────────────────────────────────────── */
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; }
+  .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-bottom: 24px; }
+
+  @media (max-width: 900px) { .grid-2 { grid-template-columns: 1fr; } .grid-3 { grid-template-columns: 1fr; } }
+
+  /* ── Chart ──────────────────────────────────────────────────────── */
+  .chart-container { position: relative; height: 200px; }
+  canvas { width: 100% !important; max-height: 200px; }
+
+  /* ── Tables ─────────────────────────────────────────────────────── */
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; padding: 8px 12px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); border-bottom: 1px solid var(--border); }
+  td { padding: 9px 12px; border-bottom: 1px solid rgba(255,255,255,0.04); }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: rgba(255,255,255,0.025); }
+
+  /* ── Cache card ─────────────────────────────────────────────────── */
+  .cache-row { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+  .cache-row:last-child { border-bottom: none; }
+  .cache-row span:last-child { color: var(--text); font-weight: 500; }
+
+  /* ── Backend timeline ───────────────────────────────────────────── */
+  .backend-row { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+  .backend-row:last-child { border-bottom: none; }
+  .backend-pill {
+    padding: 2px 10px; border-radius: 12px; font-size: 11px; font-weight: 600;
+    white-space: nowrap;
+  }
+  .backend-pill.claude      { background: rgba(167,139,250,0.2); color: var(--claude); }
+  .backend-pill.antigravity { background: rgba(52,211,153,0.2); color: var(--ag); }
+
+  /* ── Empty state ────────────────────────────────────────────────── */
+  .empty { text-align: center; padding: 40px 0; color: var(--muted); }
+  .empty-icon { font-size: 40px; margin-bottom: 8px; }
+
+  /* ── Loading ────────────────────────────────────────────────────── */
+  .loading { text-align: center; padding: 60px; color: var(--muted); animation: fadeInUp 0.5s ease; }
+  @keyframes fadeInUp { from { opacity:0; transform: translateY(10px); } to { opacity:1; transform: none; } }
+
+  /* ── Scrollbar ──────────────────────────────────────────────────── */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <header>
+    <div class="logo">
+      <span class="logo-icon">📊</span>
+      Claude Integration — Analytics
+    </div>
+    <div class="header-right">
+      <div id="backendBadge" class="backend-badge">
+        <span class="badge-dot"></span>
+        <span id="backendLabel">Loading…</span>
+      </div>
+      <button class="refresh-btn" onclick="loadData()">↺ Refresh</button>
+    </div>
+  </header>
+
+  <main id="main">
+    <div class="loading">⏳ Loading analytics data…</div>
+  </main>
+</div>
+
+<script>
+// ── Mini chart library (no deps) ──────────────────────────────────
+
+function drawBarChart(canvasId, labels, values, color = '#818cf8') {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width = canvas.offsetWidth * window.devicePixelRatio;
+  const H = canvas.height = 200 * window.devicePixelRatio;
+  ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+  const w = canvas.offsetWidth, h = 200;
+
+  ctx.clearRect(0, 0, w, h);
+
+  if (!values.length) return;
+
+  const max = Math.max(...values, 0.001);
+  const pad = { top: 16, right: 8, bottom: 28, left: 8 };
+  const cw = (w - pad.left - pad.right) / values.length;
+  const barW = Math.max(cw * 0.6, 2);
+
+  values.forEach((v, i) => {
+    const barH = ((v / max) * (h - pad.top - pad.bottom));
+    const x = pad.left + i * cw + (cw - barW) / 2;
+    const y = h - pad.bottom - barH;
+
+    // Gradient fill
+    const grad = ctx.createLinearGradient(0, y, 0, y + barH);
+    grad.addColorStop(0, color);
+    grad.addColorStop(1, color + '33');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.roundRect(x, y, barW, barH, [4, 4, 0, 0]);
+    ctx.fill();
+  });
+
+  // X-axis labels (show every Nth to avoid clutter)
+  ctx.fillStyle = '#64748b';
+  ctx.font = '10px Inter, sans-serif';
+  ctx.textAlign = 'center';
+  const step = Math.ceil(labels.length / 8);
+  labels.forEach((lbl, i) => {
+    if (i % step !== 0) return;
+    const x = pad.left + i * cw + cw / 2;
+    ctx.fillText(lbl.slice(5), x, h - 4); // show MM-DD
+  });
+}
+
+// ── Data loading ──────────────────────────────────────────────────
+
+function fmt(n, decimals = 2) {
+  if (n === undefined || n === null) return '—';
+  return Number(n).toLocaleString('en-US', { maximumFractionDigits: decimals });
+}
+function fmtUsd(n) { return '$' + Number(n || 0).toFixed(6); }
+function fmtDate(iso) { return iso ? new Date(iso).toLocaleString() : '—'; }
+
+async function loadData() {
+  try {
+    const res = await fetch('/api/metrics');
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    renderDashboard(data);
+  } catch (err) {
+    document.getElementById('main').innerHTML =
+      `<div class="loading">❌ Failed to load data: ${err.message}<br><small>Make sure npm run dashboard is running.</small></div>`;
+  }
+}
+
+// ── Render ────────────────────────────────────────────────────────
+
+function renderDashboard({ metrics, cache, backend, backendSwitchedAt }) {
+  // Header badge
+  const badge = document.getElementById('backendBadge');
+  const label = document.getElementById('backendLabel');
+  badge.className = 'backend-badge ' + (backend || 'claude');
+  label.textContent = backend === 'antigravity' ? '🟢 Antigravity' : '🟣 Claude API';
+
+  const m = metrics;
+  const cacheHitRate = m.totalRequests > 0
+    ? ((m.totalCacheHits / m.totalRequests) * 100).toFixed(1) + '%'
+    : '0%';
+
+  // Build HTML
+  document.getElementById('main').innerHTML = `
+    <!-- ── KPI Stats ── -->
+    <div class="stats-grid">
+      <div class="card stat-card">
+        <div class="stat-value color-claude">${fmt(m.totalRequests, 0)}</div>
+        <div class="stat-label">Total Requests</div>
+        <div class="stat-sub">all time</div>
+      </div>
+      <div class="card stat-card">
+        <div class="stat-value color-tokens">${fmt(m.totalInputTokens + m.totalOutputTokens, 0)}</div>
+        <div class="stat-label">Total Tokens</div>
+        <div class="stat-sub">${fmt(m.totalInputTokens,0)}↑ ${fmt(m.totalOutputTokens,0)}↓</div>
+      </div>
+      <div class="card stat-card">
+        <div class="stat-value color-cost">${fmtUsd(m.totalCostUsd)}</div>
+        <div class="stat-label">Total Cost (USD)</div>
+        <div class="stat-sub">Claude API only</div>
+      </div>
+      <div class="card stat-card">
+        <div class="stat-value color-cache">${cacheHitRate}</div>
+        <div class="stat-label">Cache Hit Rate</div>
+        <div class="stat-sub">${fmt(m.totalCacheHits,0)} hits saved</div>
+      </div>
+      <div class="card stat-card">
+        <div class="stat-value color-speed">${fmt(m.averageDurationMs,0)}<small style="font-size:18px">ms</small></div>
+        <div class="stat-label">Avg Response Time</div>
+        <div class="stat-sub">all requests</div>
+      </div>
+    </div>
+
+    <!-- ── Charts ── -->
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-title">Requests — Last 30 Days</div>
+        <div class="chart-container">
+          <canvas id="requestsChart"></canvas>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">Cost (USD) — Last 30 Days</div>
+        <div class="chart-container">
+          <canvas id="costChart"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── By Model + By Backend ── -->
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-title">Usage by Model</div>
+        ${renderModelTable(m.byModel)}
+      </div>
+      <div class="card">
+        <div class="card-title">Usage by Backend</div>
+        ${renderBackendTable(m.byBackend)}
+      </div>
+    </div>
+
+    <!-- ── Cache + Active Backend ── -->
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-title">Response Cache</div>
+        ${renderCacheCard(cache)}
+      </div>
+      <div class="card">
+        <div class="card-title">Active Backend Info</div>
+        <div class="cache-row"><span>Mode</span><span>${backend === 'antigravity' ? '🟢 Antigravity' : '🟣 Claude API'}</span></div>
+        <div class="cache-row"><span>Active since</span><span>${fmtDate(backendSwitchedAt)}</span></div>
+        <div class="cache-row"><span>Switch to Claude API</span><span style="color:var(--muted)">npm run use:claude</span></div>
+        <div class="cache-row"><span>Switch to Antigravity</span><span style="color:var(--muted)">npm run use:antigravity</span></div>
+      </div>
+    </div>
+  `;
+
+  // Draw charts
+  const days30 = m.last30Days || [];
+  const labels = days30.map(d => d.date);
+  drawBarChart('requestsChart', labels, days30.map(d => d.requests), '#818cf8');
+  drawBarChart('costChart', labels, days30.map(d => d.costUsd), '#f472b6');
+}
+
+function renderModelTable(models) {
+  if (!models || !models.length) return '<div class="empty"><div class="empty-icon">📭</div><div>No model data yet</div></div>';
+  return `<table>
+    <thead><tr><th>Model</th><th>Requests</th><th>Cost</th></tr></thead>
+    <tbody>
+    ${models.slice(0,8).map(m => `
+      <tr>
+        <td style="font-size:11px;color:var(--muted)">${m.model}</td>
+        <td style="color:var(--tokens)">${fmt(m.requests, 0)}</td>
+        <td style="color:var(--cost)">${fmtUsd(m.costUsd)}</td>
+      </tr>`).join('')}
+    </tbody>
+  </table>`;
+}
+
+function renderBackendTable(backends) {
+  if (!backends || !backends.length) return '<div class="empty"><div class="empty-icon">📭</div><div>No backend data yet</div></div>';
+  return `<table>
+    <thead><tr><th>Backend</th><th>Requests</th><th>Cost (API only)</th></tr></thead>
+    <tbody>
+    ${backends.map(b => `
+      <tr>
+        <td><span class="backend-pill ${b.backend}">${b.backend === 'antigravity' ? '🟢 Antigravity' : '🟣 Claude API'}</span></td>
+        <td style="color:var(--tokens)">${fmt(b.requests, 0)}</td>
+        <td style="color:var(--cost)">${fmtUsd(b.costUsd)}</td>
+      </tr>`).join('')}
+    </tbody>
+  </table>`;
+}
+
+function renderCacheCard(cache) {
+  if (!cache) return '<div class="empty">No cache data</div>';
+  return `
+    <div class="cache-row"><span>Total entries</span><span>${cache.totalEntries}</span></div>
+    <div class="cache-row"><span>Valid</span><span style="color:var(--success)">${cache.validEntries}</span></div>
+    <div class="cache-row"><span>Expired</span><span style="color:var(--danger)">${cache.expiredEntries}</span></div>
+    <div class="cache-row"><span>Disk size</span><span>${(cache.totalSizeBytes/1024).toFixed(1)} KB</span></div>
+    <div class="cache-row"><span>Oldest entry</span><span style="font-size:11px">${fmtDate(cache.oldestEntry)}</span></div>
+  `;
+}
+
+// ── Init ──────────────────────────────────────────────────────────
+
+loadData();
+setInterval(loadData, 30_000); // Auto-refresh every 30 seconds
+</script>
+</body>
+</html>

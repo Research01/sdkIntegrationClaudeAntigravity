@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { loadConfig } from './config.js';
-import type { AppConfig, ClaudeResponse, ChatMessage, HealthCheckResult, ModelInfo, RequestOptions } from './types.js';
+import type { AppConfig, ClaudeResponse, ChatMessage, HealthCheckResult, ModelInfo, RequestOptions, StreamRequestOptions } from './types.js';
 import * as logger from './utils/logger.js';
 import { safeExecute } from './utils/errors.js';
 
@@ -84,6 +84,70 @@ export async function ask(options: RequestOptions): Promise<ClaudeResponse> {
 }
 
 /**
+ * Stream a single prompt to Claude, calling onChunk for each text delta.
+ * Returns the final assembled ClaudeResponse after streaming completes.
+ *
+ * v2 — Streaming support.
+ */
+export async function askStream(options: StreamRequestOptions): Promise<ClaudeResponse> {
+  const cfg = getConfig();
+  const client = getClient();
+
+  const model = options.model || cfg.model;
+  const maxTokens = options.maxTokens || cfg.maxTokens;
+  const temperature = options.temperature ?? cfg.temperature;
+
+  logger.debug(`Streaming request to model=${model}, maxTokens=${maxTokens}`);
+
+  const params: Anthropic.MessageCreateParams = {
+    model,
+    max_tokens: maxTokens,
+    temperature,
+    messages: [{ role: 'user', content: options.prompt }],
+    stream: true,
+  };
+
+  if (options.system) {
+    params.system = options.system;
+  }
+
+  const stream = await client.messages.create(params as Anthropic.MessageCreateParamsStreaming);
+
+  let fullContent = '';
+  let inputTokens = 0;
+  let outputTokens = 0;
+  let finalModel = model;
+  let stopReason: string | null = null;
+
+  for await (const event of stream as AsyncIterable<Anthropic.MessageStreamEvent>) {
+    if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
+      const chunk = event.delta.text;
+      fullContent += chunk;
+      options.onChunk(chunk);
+    } else if (event.type === 'message_start') {
+      finalModel = event.message.model;
+      inputTokens = event.message.usage?.input_tokens ?? 0;
+    } else if (event.type === 'message_delta') {
+      outputTokens = event.usage?.output_tokens ?? 0;
+      stopReason = event.delta.stop_reason ?? null;
+    }
+  }
+
+  const response: ClaudeResponse = {
+    content: fullContent,
+    model: finalModel,
+    usage: { inputTokens, outputTokens },
+    stopReason,
+  };
+
+  if (options.onComplete) {
+    options.onComplete(response);
+  }
+
+  return response;
+}
+
+/**
  * Send a multi-turn conversation to Claude.
  */
 export async function chat(
@@ -123,6 +187,65 @@ export async function chat(
       outputTokens: response.usage.output_tokens,
     },
     stopReason: response.stop_reason,
+  };
+}
+
+/**
+ * Stream a multi-turn conversation to Claude.
+ *
+ * v2 — Streaming support for multi-turn.
+ */
+export async function chatStream(
+  messages: ChatMessage[],
+  onChunk: (chunk: string) => void,
+  options?: { system?: string; model?: string; maxTokens?: number; temperature?: number }
+): Promise<ClaudeResponse> {
+  const cfg = getConfig();
+  const client = getClient();
+
+  const model = options?.model || cfg.model;
+  const maxTokens = options?.maxTokens || cfg.maxTokens;
+  const temperature = options?.temperature ?? cfg.temperature;
+
+  const params: Anthropic.MessageCreateParams = {
+    model,
+    max_tokens: maxTokens,
+    temperature,
+    messages: messages.map((m) => ({ role: m.role, content: m.content })),
+    stream: true,
+  };
+
+  if (options?.system) {
+    params.system = options.system;
+  }
+
+  const stream = await client.messages.create(params as Anthropic.MessageCreateParamsStreaming);
+
+  let fullContent = '';
+  let inputTokens = 0;
+  let outputTokens = 0;
+  let finalModel = model;
+  let stopReason: string | null = null;
+
+  for await (const event of stream as AsyncIterable<Anthropic.MessageStreamEvent>) {
+    if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
+      const chunk = event.delta.text;
+      fullContent += chunk;
+      onChunk(chunk);
+    } else if (event.type === 'message_start') {
+      finalModel = event.message.model;
+      inputTokens = event.message.usage?.input_tokens ?? 0;
+    } else if (event.type === 'message_delta') {
+      outputTokens = event.usage?.output_tokens ?? 0;
+      stopReason = event.delta.stop_reason ?? null;
+    }
+  }
+
+  return {
+    content: fullContent,
+    model: finalModel,
+    usage: { inputTokens, outputTokens },
+    stopReason,
   };
 }
 

@@ -1,35 +1,98 @@
 import { Command } from 'commander';
-import { ask } from '../anthropicClient.js';
+import { ask, askStream } from '../anthropicClient.js';
 import { handleAnthropicError } from '../utils/errors.js';
+import { estimateCost, formatCostEstimate, calculateActualCost, formatActualCostShort } from '../utils/costEstimator.js';
+import { getConfig } from '../anthropicClient.js';
 import * as logger from '../utils/logger.js';
-import { validatePrompt, validateModel, validateMaxTokens, validateTemperature, validateSystem } from '../utils/validation.js';
 
 export function registerAskCommand(program: Command): void {
   program
-    .command('ask <prompt>')
+    .command('ask')
     .description('Send a single prompt to Claude and get a response')
+    .argument('<prompt>', 'The prompt to send')
     .option('-m, --model <model>', 'Model to use')
-    .option('-t, --max-tokens <number>', 'Maximum tokens for response')
+    .option('-t, --max-tokens <number>', 'Maximum tokens for the response')
     .option('--temperature <number>', 'Temperature (0.0–1.0)')
     .option('-s, --system <prompt>', 'System prompt')
-    .action(async (promptArg: string, options: Record<string, string | undefined>) => {
+    .option('-S, --stream', 'Stream the response in real time')
+    .option('-e, --estimate-cost', 'Show cost estimate before sending')
+    .option('-v, --verbose', 'Show debug info')
+    .action(async (prompt: string, options: Record<string, string | boolean | undefined>) => {
+      const model   = options.model as string | undefined;
+      const maxTokens = options.maxTokens ? parseInt(options.maxTokens as string, 10) : undefined;
+      const temperature = options.temperature ? parseFloat(options.temperature as string) : undefined;
+      const system  = options.system as string | undefined;
+      const stream  = options.stream === true;
+      const showEst = options.estimateCost === true;
+
+      // Resolve effective model for cost display
+      let effectiveModel: string;
       try {
-        const prompt = validatePrompt(promptArg);
-        const model = validateModel(options.model);
-        const maxTokens = validateMaxTokens(options.maxTokens);
-        const temperature = validateTemperature(options.temperature);
-        const system = validateSystem(options.system);
+        effectiveModel = model || getConfig().model;
+      } catch {
+        effectiveModel = 'claude-sonnet-4-20250514';
+      }
 
-        logger.debug(`Ask: model=${model || 'default'}, maxTokens=${maxTokens || 'default'}`);
-
-        const response = await ask({ prompt, system, model, maxTokens, temperature });
-
-        logger.print(response.content);
+      // ── Cost estimation ──────────────────────────────────────────
+      if (showEst) {
+        const estimate = estimateCost(
+          effectiveModel,
+          prompt,
+          system,
+          maxTokens ?? 1024,
+        );
         logger.print('');
-        logger.print(`── model: ${response.model} | tokens: ${response.usage.inputTokens} in / ${response.usage.outputTokens} out | stop: ${response.stopReason} ──`);
+        logger.print('── Cost Estimate ──────────────────────────────────────');
+        logger.print(formatCostEstimate(estimate));
+        logger.print('───────────────────────────────────────────────────────');
+        logger.print('');
+      }
+
+      try {
+        if (stream) {
+          // ── Streaming mode ─────────────────────────────────────
+          logger.print('');
+          process.stdout.write('Claude > ');
+          let totalContent = '';
+
+          const response = await askStream({
+            prompt,
+            system,
+            model,
+            maxTokens,
+            temperature,
+            onChunk: (chunk) => {
+              process.stdout.write(chunk);
+              totalContent += chunk;
+            },
+          });
+
+          process.stdout.write('\n');
+          logger.print('');
+
+          const costUsd = calculateActualCost(response.model, response.usage.inputTokens, response.usage.outputTokens);
+          logger.print(
+            `  [${response.usage.inputTokens}↑ ${response.usage.outputTokens}↓ tokens | ` +
+            `${formatActualCostShort(costUsd)} | ${response.model}]`
+          );
+          logger.print('');
+        } else {
+          // ── Non-streaming mode ─────────────────────────────────
+          const response = await ask({ prompt, system, model, maxTokens, temperature });
+          logger.print('');
+          logger.print(response.content);
+          logger.print('');
+
+          const costUsd = calculateActualCost(response.model, response.usage.inputTokens, response.usage.outputTokens);
+          logger.print(
+            `  [${response.usage.inputTokens}↑ ${response.usage.outputTokens}↓ tokens | ` +
+            `${formatActualCostShort(costUsd)} | ${response.model}]`
+          );
+          logger.print('');
+        }
       } catch (err) {
         const message = handleAnthropicError(err);
-        logger.error(message);
+        logger.error(`\nError: ${message}\n`);
         process.exit(1);
       }
     });

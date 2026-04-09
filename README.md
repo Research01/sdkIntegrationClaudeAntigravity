@@ -1,7 +1,8 @@
 # Claude Integration for Antigravity
 
-> **Claude pay-as-you-go** integration — CLI + MCP server for Google Antigravity.
-> Use Claude directly from your terminal or expose Claude tools inside Antigravity via MCP.
+> **v3.0.0** — CLI + MCP server with **dual-backend switching**.
+> Toggle between **Claude API** (pay-as-you-go) and **Antigravity** (subscription) with a single command.
+> Features: streaming, vision, file processing, tool chaining, response cache, analytics dashboard.
 
 ---
 
@@ -10,6 +11,7 @@
 - [Prerequisites](#prerequisites)
 - [Installation](#installation)
 - [Configuration](#configuration)
+- [**Backend Switching**](#backend-switching) ← NEW v3
 - [CLI Usage](#cli-usage)
 - [MCP Server Usage](#mcp-server-usage)
 - [Register MCP Server in Antigravity](#register-mcp-server-in-antigravity)
@@ -62,7 +64,7 @@ cp .env.example .env
 Edit the `.env` file with your settings:
 
 ```env
-# Required
+# Required (only for Claude API backend)
 ANTHROPIC_API_KEY=sk-ant-your-actual-key-here
 
 # Optional — all have sensible defaults
@@ -71,18 +73,49 @@ ANTHROPIC_MAX_TOKENS=4096
 ANTHROPIC_BASE_URL=https://api.anthropic.com
 ANTHROPIC_TIMEOUT_MS=120000
 ANTHROPIC_TEMPERATURE=0.7
+
+# v3 — Response Cache
+CACHE_ENABLED=false        # Set to true to enable on-disk caching
+CACHE_TTL_HOURS=24         # Cache expiry in hours
 ```
 
 ### Environment Variables Reference
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `ANTHROPIC_API_KEY` | ✅ | — | Your Anthropic API key |
+| `ANTHROPIC_API_KEY` | ✅* | — | Anthropic API key (*not needed in Antigravity mode) |
 | `ANTHROPIC_MODEL` | ❌ | `claude-sonnet-4-20250514` | Default model |
 | `ANTHROPIC_MAX_TOKENS` | ❌ | `4096` | Max tokens per response |
 | `ANTHROPIC_BASE_URL` | ❌ | `https://api.anthropic.com` | API base URL |
 | `ANTHROPIC_TIMEOUT_MS` | ❌ | `120000` | Request timeout (ms) |
 | `ANTHROPIC_TEMPERATURE` | ❌ | `0.7` | Generation temperature (0.0–1.0) |
+| `CACHE_ENABLED` | ❌ | `false` | Enable response caching |
+| `CACHE_TTL_HOURS` | ❌ | `24` | Cache entry TTL in hours |
+
+---
+
+---
+
+## Backend Switching
+
+Switch between **Claude API** (pay-as-you-go) and **Antigravity** (subscription) at any time:
+
+```bash
+npm run backend            # Show active backend
+npm run use:claude         # ← Switch to Claude API (uses ANTHROPIC_API_KEY)
+npm run use:antigravity    # ← Switch to Antigravity (uses subscription)
+```
+
+The active backend is persisted in `~/.claude-integration/config.json`.
+Every CLI command and MCP tool respects the active backend automatically.
+
+| Backend | Cost | Requires |
+|---------|------|----------|
+| `claude` | Pay-per-token (ANTHROPIC_API_KEY) | API key in `.env` |
+| `antigravity` | Subscription (no per-token cost) | Antigravity CLI installed |
+
+> **Note:** When `antigravity` mode is active and the Antigravity binary is not found,
+> the system automatically falls back to Claude API with a warning.
 
 ---
 
@@ -127,6 +160,24 @@ With a system prompt:
 npm run ask -- "What is TypeScript?" --system "You are a senior engineer. Be concise."
 ```
 
+**v2 — Streaming mode** (real-time output):
+
+```bash
+npm run ask -- "Write a poem about TypeScript" --stream
+```
+
+**v2 — Cost estimation** before sending:
+
+```bash
+npm run ask -- "Your prompt" --estimate-cost
+```
+
+Combine both:
+
+```bash
+npm run ask -- "Explain async/await" --stream --estimate-cost
+```
+
 ### Interactive Chat
 
 Start a multi-turn conversation:
@@ -141,9 +192,30 @@ With custom settings:
 npm run chat -- --model claude-sonnet-4-20250514 --system "You are a helpful coding assistant"
 ```
 
+**v2 — Streaming mode:**
+
+```bash
+npm run chat -- --stream
+```
+
+**v2 — Named persistent sessions** (saved to `~/.claude-integration/conversations/`):
+
+```bash
+npm run chat -- --session my-project
+```
+
+**v2 — Show cost estimation per turn:**
+
+```bash
+npm run chat -- --session my-project --stream --estimate-cost
+```
+
 Chat commands:
-- `/quit` — Exit the chat
+- `/quit` — Exit (auto-saves session)
 - `/clear` — Clear conversation history
+- `/save <name>` — Save session with a name
+- `/load <name>` — Load a previously saved session
+- `/sessions` — List all saved sessions
 - `/help` — Show available commands
 
 ### List Available Models
@@ -151,6 +223,61 @@ Chat commands:
 ```bash
 npm run models
 ```
+
+### Image Analysis — Vision (v3)
+
+```bash
+# Analyze a local image
+npm run vision -- ./screenshot.png "What's in this image?"
+
+# Analyze a remote image
+npm run vision -- https://example.com/diagram.png "Explain this diagram"
+
+# With custom system prompt
+npm run vision -- ./code.png "What bug do you see?" --system "You are a code reviewer"
+```
+
+### Tool Chaining (v3)
+
+Create a `chain.json` file:
+
+```json
+{
+  "name": "Summarize then Translate",
+  "steps": [
+    { "id": "summary", "tool": "ask", "prompt": "Summarize this text:\n{{input}}" },
+    { "id": "translate", "tool": "ask", "prompt": "Translate to Spanish:\n{{summary}}" }
+  ]
+}
+```
+
+Run it:
+
+```bash
+npm run chain -- chain.json "My long text to process..."
+npm run chain -- chain.json --input-file document.txt --verbose
+```
+
+### Response Cache (v3)
+
+Enable in `.env` (`CACHE_ENABLED=true`) then manage:
+
+```bash
+npm run cache:stats    # Show cache hit rate, size, TTL
+npm run cache:prune    # Remove expired entries
+npm run cache:clear    # Delete all cached responses
+```
+
+### Analytics Dashboard (v3)
+
+```bash
+npm run dashboard                  # Opens http://localhost:4321
+npm run dashboard -- --port 8080   # Custom port
+npm run dashboard -- --no-open     # Don't auto-open browser
+```
+
+The dashboard shows: requests over time, cost breakdown by model and backend,
+cache statistics, and backend switching history. Auto-refreshes every 30 seconds.
 
 ### Verbose Mode
 
@@ -182,12 +309,52 @@ The server communicates over **stdio** using the MCP protocol (JSON-RPC). It doe
 
 ### Exposed Tools
 
-| Tool | Description | Inputs |
-|------|-------------|--------|
-| `claude_ask` | Send a prompt to Claude | `prompt` (required), `system`, `model`, `max_tokens`, `temperature` |
-| `claude_health` | Check API connectivity | — |
-| `claude_list_models` | List available models | — |
-| `claude_explain_project` | Explain code or project summary | `code_or_summary` (required), `language`, `context` |
+**v1 Tools**
+
+| Tool | Description |
+|------|-------------|
+| `claude_ask` | Send a prompt to Claude |
+| `claude_health` | Check API connectivity |
+| `claude_list_models` | List available models |
+| `claude_explain_project` | Explain code or project summary |
+
+**v2 Tools**
+
+| Tool | Description |
+|------|-------------|
+| `claude_estimate_cost` | Estimate request cost before sending |
+| `claude_session_list` | List saved conversation sessions |
+| `claude_session_load` | Load a session's history |
+| `claude_session_chat` | Continue a persisted conversation |
+
+**v3 Tools**
+
+| Tool | Description |
+|------|-------------|
+| `claude_vision` | Analyze images (file path or URL) |
+| `claude_analyze_file` | Read + analyze a single file |
+| `claude_process_files` | Batch analyze up to 10 files |
+| `claude_chain` | Execute a JSON-defined pipeline |
+| `claude_cache_stats` | Show response cache statistics |
+| `claude_backend_status` | Show active backend (claude \| antigravity) |
+
+### MCP Resources (v2 + v3)
+
+| Resource URI | Description |
+|-------------|-------------|
+| `claude://models` | Live list of available Claude models |
+| `claude://conversations` | Persisted conversation sessions |
+| `claude://analytics` | Usage analytics summary |
+
+### MCP Prompts (v2)
+
+| Prompt | Arguments |
+|--------|-----------|
+| `code_review` | `code` (req), `language`, `focus` |
+| `explain_code` | `code` (req), `language`, `audience` |
+| `write_tests` | `code` (req), `language`, `framework` |
+| `summarize` | `text` (req), `format`, `max_words` |
+| `debug_error` | `error` (req), `code`, `language`, `context` |
 
 ### Verbose MCP Logging
 
@@ -321,73 +488,113 @@ Could not connect to the Anthropic API.
 
 ```
 claude-integration/
-├── package.json              # Scripts: ask, chat, health, models, mcp:dev, mcp:start
-├── tsconfig.json             # TypeScript configuration (ES2022, Node16 modules)
+├── package.json              # Scripts: ask, chat, vision, chain, dashboard, backend...
+├── tsconfig.json             # TypeScript (ES2022, Node16 modules)
 ├── .env.example              # Environment variable template
-├── .gitignore                # Excludes .env, node_modules, dist
 └── src/
     ├── index.ts              # CLI entry point (Commander.js)
     ├── config.ts             # Environment loading & validation
     ├── types.ts              # TypeScript interfaces
-    ├── anthropicClient.ts    # Shared Anthropic SDK client (singleton)
+    ├── anthropicClient.ts    # Legacy compat shim → providers/
+    ├── providers/            # ← v3: Backend abstraction layer
+    │   ├── aiProvider.ts     # AIProvider interface
+    │   ├── claudeProvider.ts # Anthropic SDK (pay-as-you-go)
+    │   ├── antigravityProvider.ts  # Antigravity CLI (subscription)
+    │   └── providerFactory.ts      # Returns active provider
     ├── cli/
-    │   ├── ask.ts            # Single-prompt command
-    │   ├── chat.ts           # Interactive multi-turn chat
+    │   ├── ask.ts            # ask — with --stream, --estimate-cost
+    │   ├── chat.ts           # chat — --session, /save, /load
     │   ├── health.ts         # API health check
-    │   └── listModels.ts     # List available models
+    │   ├── listModels.ts     # List available models
+    │   ├── backend.ts        # backend / use:claude / use:antigravity  ← v3
+    │   ├── vision.ts         # Image analysis                          ← v3
+    │   ├── chain.ts          # Multi-step pipeline executor             ← v3
+    │   └── dashboard.ts      # Local analytics web server              ← v3
     ├── mcp/
-    │   ├── server.ts         # MCP server (stdio transport)
-    │   ├── tools.ts          # Tool definitions with Zod schemas
-    │   └── handlers.ts       # Tool implementation handlers
+    │   ├── server.ts         # MCP server v3 (stdio, 14 tools, 3 resources)
+    │   ├── handlers.ts       # v1+v2 tool handlers
+    │   ├── prompts.ts        # v2 prompt templates
+    │   ├── visionHandler.ts  # claude_vision                           ← v3
+    │   ├── fileHandler.ts    # claude_analyze_file / process_files     ← v3
+    │   └── chainHandler.ts   # claude_chain                            ← v3
+    ├── analytics/            # ← v3: Usage tracking
+    │   ├── collector.ts      # Append JSONL events per API call
+    │   └── aggregator.ts     # Aggregate metrics for dashboard
+    ├── dashboard/
+    │   └── index.html        # Web UI (dark theme, bar charts)         ← v3
+    ├── test/
+    │   └── integration.test.ts  # node:test test suite                 ← v3
     └── utils/
         ├── logger.ts         # Safe logging (stderr for MCP)
         ├── errors.ts         # Anthropic error classification
-        └── validation.ts     # Input validation helpers
+        ├── validation.ts     # Input validation helpers
+        ├── costEstimator.ts  # Token pricing + cost estimation          ← v2
+        ├── conversationStore.ts  # Session CRUD persistence            ← v2
+        ├── backendManager.ts # Backend config persistence               ← v3
+        ├── responseCache.ts  # SHA-256 disk cache with TTL             ← v3
+        └── toolChain.ts      # Pipeline executor engine                ← v3
 ```
 
 ### Design Principles
 
-- **Single client**: One `Anthropic` instance shared across CLI and MCP
-- **Layer separation**: CLI and MCP have their own entry points but share `anthropicClient.ts`
+- **Provider abstraction**: `AIProvider` interface decouples Claude API from Antigravity
+- **Backend switching**: One command toggles backend; all tools react automatically
+- **Single config dir**: `~/.claude-integration/` holds sessions, cache, analytics, config
 - **Safe logging**: MCP mode never writes to stdout (reserved for JSON-RPC)
+- **Analytics-first**: Every API call records an event for the dashboard
+- **Cache-optional**: SHA-256 response cache opt-in via `CACHE_ENABLED=true`
 - **Typed everything**: Full TypeScript with strict mode
-- **Validated inputs**: All user inputs validated before hitting the API
-- **Graceful errors**: Every Anthropic error type mapped to actionable user messages
 
 ---
 
 ## Next Steps
 
-### v2 Improvements
-- [ ] Add MCP **resources** (expose conversation history, model list as resources)
-- [ ] Add MCP **prompts** (pre-built prompt templates for common tasks)
-- [ ] Streaming responses for real-time output
-- [ ] Token cost estimation before requests
-- [ ] Conversation persistence (save/load chat history)
-- [ ] Multiple concurrent conversations
+### v2 Improvements ✅
+- [x] Add MCP **resources** (`claude://models`, `claude://conversations`)
+- [x] Add MCP **prompts** (`code_review`, `explain_code`, `write_tests`, `summarize`, `debug_error`)
+- [x] Streaming responses (`--stream` flag in `ask` and `chat`)
+- [x] Token cost estimation before requests (`--estimate-cost` + `claude_estimate_cost` tool)
+- [x] Conversation persistence (`--session <name>`, `/save`, `/load`, `/sessions`)
+- [x] Multiple concurrent conversations (each session has a unique UUID, stored independently)
 
-### v3 Expansion
-- [ ] Image analysis support (Claude vision)
-- [ ] File upload and processing via MCP
-- [ ] Custom tool chaining (combine multiple Claude calls)
-- [ ] Response caching layer
-- [ ] Usage analytics and cost tracking dashboard
-- [ ] Integration tests with mock API
+### v3 Expansion ✅
+- [x] Image analysis support — `npm run vision` + `claude_vision` MCP tool
+- [x] File upload and processing via MCP — `claude_analyze_file`, `claude_process_files`
+- [x] Custom tool chaining — `npm run chain` + `claude_chain` MCP tool
+- [x] Response caching layer — SHA-256 disk cache, TTL, `cache:stats/clear/prune`
+- [x] Usage analytics and cost tracking dashboard — `npm run dashboard` at localhost:4321
+- [x] Integration tests — `npm run test` with `node:test` runner
+
+### Backend Switching ✅ (v3 extra)
+- [x] `npm run use:claude` — Claude API mode (pay-as-you-go)
+- [x] `npm run use:antigravity` — Antigravity subscription mode
+- [x] `npm run backend` — Show active backend status
+- [x] Auto-fallback to Claude API if Antigravity binary not found
 
 ---
 
 ## npm Scripts Reference
 
-| Script | Command | Description |
-|--------|---------|-------------|
-| `build` | `npm run build` | Compile TypeScript to JavaScript |
-| `dev` | `npm run dev` | Watch mode — recompile on changes |
-| `ask` | `npm run ask -- "prompt"` | Send a single prompt |
-| `chat` | `npm run chat` | Interactive conversation |
-| `health` | `npm run health` | Check API status |
-| `models` | `npm run models` | List available models |
-| `mcp:dev` | `npm run mcp:dev` | Build + start MCP server |
-| `mcp:start` | `npm run mcp:start` | Start MCP server (pre-built) |
+| Script | Description |
+|--------|-------------|
+| `npm run build` | Compile TypeScript to JavaScript |
+| `npm run dev` | Watch mode — recompile on changes |
+| `npm run test` | Run integration tests |
+| `npm run ask -- "prompt"` | Send a single prompt |
+| `npm run chat` | Interactive multi-turn conversation |
+| `npm run vision -- <img> "prompt"` | Analyze an image |
+| `npm run chain -- chain.json` | Run a tool pipeline |
+| `npm run dashboard` | Start analytics UI at localhost:4321 |
+| `npm run health` | Check API status |
+| `npm run models` | List available models |
+| `npm run backend` | Show active backend |
+| `npm run use:claude` | Switch to Claude API |
+| `npm run use:antigravity` | Switch to Antigravity |
+| `npm run cache:stats` | Show cache statistics |
+| `npm run cache:clear` | Delete all cached responses |
+| `npm run cache:prune` | Delete expired cache entries |
+| `npm run mcp:dev` | Build + start MCP server |
+| `npm run mcp:start` | Start MCP server (pre-built) |
 
 ---
 
